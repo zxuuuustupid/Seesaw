@@ -5,28 +5,18 @@ Yaw_PIDTypeDef Yaw;
 extern float yaw_Init;
 float Pit_PID_Calculate(Pitch_PIDTypeDef *pidTypeDef, float PitchMeasure)
 {
+    // 这是一个简化的比例控制器。
+    // 电机速度 = Kp * (目标角度 - 当前角度)
+    // 您可以调整下面的 Kp 值来改变电机的响应灵敏度。
+    const float Kp = 10.0f; // 可调整的比例系数
+
     pidTypeDef->PitchMeasure = PitchMeasure;
-
-    pidTypeDef->PitchLastError = pidTypeDef->PitchError;
-    pidTypeDef->RPMLastOutput = pidTypeDef->RPMOutput;
-
     pidTypeDef->PitchError = pidTypeDef->PitchSetting - pidTypeDef->PitchMeasure;
 
-    pidTypeDef->KPOut = pidTypeDef->KP * pidTypeDef->PitchError;
-    pidTypeDef->KIOut += pidTypeDef->KI * pidTypeDef->PitchError;
-    pidTypeDef->KDOut = pidTypeDef->KD * (pidTypeDef->PitchError - pidTypeDef->PitchLastError);
+    // 只使用P项进行比例控制
+    pidTypeDef->RPMOutput = Kp * pidTypeDef->PitchError;
 
-    if (pidTypeDef->KIOut > pidTypeDef->IntegralLimit)
-    {
-        pidTypeDef->KIOut = pidTypeDef->IntegralLimit;
-    }
-    else if (pidTypeDef->KIOut < -pidTypeDef->IntegralLimit)
-    {
-        pidTypeDef->KIOut = -pidTypeDef->IntegralLimit;
-    }
-
-    pidTypeDef->RPMOutput = pidTypeDef->KPOut + pidTypeDef->KDOut + pidTypeDef->KIOut;
-    pidTypeDef->RPMOutput = 0.7f * pidTypeDef->RPMOutput + 0.3f * pidTypeDef->RPMLastOutput;
+    // 限制最大输出速度
     if (pidTypeDef->RPMOutput > pidTypeDef->MaxRPMOutput)
     {
         pidTypeDef->RPMOutput = pidTypeDef->MaxRPMOutput;
@@ -40,14 +30,15 @@ float Pit_PID_Calculate(Pitch_PIDTypeDef *pidTypeDef, float PitchMeasure)
 }
 void Pitch_PID_Init(void)
 {
-    Pit.PitchSetting = 0.0f;
-    Pit.ControlPeriodSec = 0.01f;
-    Pit.KP = 0.01f;
-    Pit.KI = 0.0001f;
-    Pit.KD = 0.001f;
+    Pit.PitchSetting = 0.0f; // 设置目标角度为0
+    Pit.MaxRPMOutput = 50.0f; // 设置电机最大转速
 
-    Pit.IntegralLimit = 50.0f;
-    Pit.MaxRPMOutput = 50.0f;
+    // 以下参数在简易模式下未使用
+    Pit.ControlPeriodSec = 0.01f;
+    Pit.KP = 0.0f; // Kp值在计算函数中直接定义
+    Pit.KI = 0.0f;
+    Pit.KD = 0.0f;
+    Pit.IntegralLimit = 0.0f;
     Pit.PitchMeasure = 0.0f;
     Pit.PitchLastError = 0.0f;
     Pit.RPMLastOutput = 0.0f;

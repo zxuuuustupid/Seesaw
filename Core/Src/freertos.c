@@ -278,9 +278,10 @@ void StartTaskALL_Ctrl(void const *argument)
     // Task1
     if (Task_Flag == 1)
     {
-      MotorPID[0].RPMSetting = Yaw.FunctionCalPID(&Yaw, yaw_angle);
-      MotorPID[1].RPMSetting = -Yaw.FunctionCalPID(&Yaw, yaw_angle);
-      LED_Flash(400);
+    float yaw_error = yaw_angle - yaw_Init;  // 计算偏差
+    MotorPID[0].RPMSetting = Yaw.FunctionCalPID(&Yaw, yaw_error);
+    MotorPID[1].RPMSetting = -Yaw.FunctionCalPID(&Yaw, yaw_error);
+    LED_Flash(400);
       if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET)
       {
         osDelay(100);
@@ -292,9 +293,11 @@ void StartTaskALL_Ctrl(void const *argument)
     }
     if (Task_Flag == 2)
     {
-      MotorPID[0].RPMSetting = Pit.FunctionCalPID(&Pit, pitch_angle) + Yaw.FunctionCalPID(&Yaw, yaw_angle);
-      MotorPID[1].RPMSetting = Pit.FunctionCalPID(&Pit, pitch_angle) - Yaw.FunctionCalPID(&Yaw, yaw_angle);
-      LED_Flash(1000);
+    float yaw_error = yaw_angle - yaw_Init;   // 加上偏差修正
+    float pitch_error = pitch_angle;          // 如果需要也可以加初始偏移
+    MotorPID[0].RPMSetting = Pit.FunctionCalPID(&Pit, pitch_error) + Yaw.FunctionCalPID(&Yaw, yaw_error);
+    MotorPID[1].RPMSetting = Pit.FunctionCalPID(&Pit, pitch_error) - Yaw.FunctionCalPID(&Yaw, yaw_error);
+    LED_Flash(1000);
       if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET)
       {
         osDelay(100);
