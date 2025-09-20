@@ -1,5 +1,8 @@
 #include "Encoder.h"
 EncoderTypeDef MotorEncoder[2];
+int32_t Encoder_Interral[2] = {0};
+float Num_Rounds = 0.0;
+float Distance_Measure = 0.0;
 void EncoderInit(void)
 { // 编码器测量的初始�??
     MotorEncoder[0].CounterSettingValue = 50000;
@@ -55,22 +58,41 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
                 MotorEncoder[0].RotationSpeed = 60 * 100000 / (float)(MotorEncoder[0].CurrEncoderCountValue - MotorEncoder[0].LastEncoderCountValue) / MotorEncoder[0].Ratio;
             }
             MotorEncoder[0].RotationSpeed = MotorEncoder[0].MotorDir * MotorEncoder[0].RotationSpeed;
-        }
-        if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2)
-        {
-            MotorEncoder[1].WatchDogTick = 0;
-            tempvalue2 = (uint32_t)HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
-            MotorEncoder[1].LastEncoderCountValue = MotorEncoder[1].CurrEncoderCountValue;
-            MotorEncoder[1].CurrEncoderCountValue = tempvalue2;
-            if (MotorEncoder[1].CurrEncoderCountValue < MotorEncoder[1].LastEncoderCountValue)
+            if (MotorEncoder[0].MotorDir == 1.0f)
             {
-                MotorEncoder[1].RotationSpeed = 60 * 100000 / (float)(MotorEncoder[1].CurrEncoderCountValue + MotorEncoder[1].CounterSettingValue - MotorEncoder[1].LastEncoderCountValue) / MotorEncoder[1].Ratio;
+                Encoder_Interral[0]--;
             }
-            else
+            else if (MotorEncoder[0].MotorDir == -1.0f)
             {
-                MotorEncoder[1].RotationSpeed = 60 * 100000 / (float)(MotorEncoder[1].CurrEncoderCountValue - MotorEncoder[1].LastEncoderCountValue) / MotorEncoder[1].Ratio;
+                Encoder_Interral[0]++;
             }
-            MotorEncoder[1].RotationSpeed = MotorEncoder[1].MotorDir * MotorEncoder[1].RotationSpeed;
         }
     }
+    if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2)
+    {
+        MotorEncoder[1].WatchDogTick = 0;
+        tempvalue2 = (uint32_t)HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
+        MotorEncoder[1].LastEncoderCountValue = MotorEncoder[1].CurrEncoderCountValue;
+        MotorEncoder[1].CurrEncoderCountValue = tempvalue2;
+        if (MotorEncoder[1].CurrEncoderCountValue < MotorEncoder[1].LastEncoderCountValue)
+        {
+            MotorEncoder[1].RotationSpeed = 60 * 100000 / (float)(MotorEncoder[1].CurrEncoderCountValue + MotorEncoder[1].CounterSettingValue - MotorEncoder[1].LastEncoderCountValue) / MotorEncoder[1].Ratio;
+        }
+        else
+        {
+            MotorEncoder[1].RotationSpeed = 60 * 100000 / (float)(MotorEncoder[1].CurrEncoderCountValue - MotorEncoder[1].LastEncoderCountValue) / MotorEncoder[1].Ratio;
+        }
+        MotorEncoder[1].RotationSpeed = MotorEncoder[1].MotorDir * MotorEncoder[1].RotationSpeed;
+        if (MotorEncoder[1].MotorDir == 1.0f)
+        {
+            Encoder_Interral[1]--;
+        }
+        else if (MotorEncoder[1].MotorDir == -1.0f)
+        {
+            Encoder_Interral[1]++;
+        }
+    }
+
+    Num_Rounds = (float)(Encoder_Interral[1] + Encoder_Interral[0]) / 2.0f / 82.0f / 9.0f; // 计算电机转过的圈数
+    Distance_Measure = (float)(Num_Rounds * 2.0f * 3.1415926f * 0.066f * 0.47f);           // 计算电机转过的距离
 }

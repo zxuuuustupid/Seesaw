@@ -54,12 +54,16 @@ extern PIDTypeDef MotorPID[2];
 extern uint8_t g_recv_buf[11];
 extern Pitch_PIDTypeDef Pit;
 extern Yaw_PIDTypeDef Yaw;
+extern Distance_PIDTypeDef Distance;
 float roll_angle;
 float pitch_angle;
 float yaw_angle;
+extern float Distance_Measure;
 float yaw_Init;
 int Task_Flag = 0;
 extern uint8_t Usart_RxData;
+extern float Yaw_Expect1;
+struct Places_Type places_1[8];
 /* USER CODE END Variables */
 osThreadId defaultTaskHandle;
 osThreadId myTask02Handle;
@@ -228,15 +232,17 @@ void StartTaskUART1Send(void const *argument)
   {
     HAL_UART_Transmit_IT(&huart6, send_cmd, sizeof(send_cmd));
     HAL_UART_Receive(&huart6, g_recv_buf, sizeof(g_recv_buf), 200);
-    int16_t roll_raw = (g_recv_buf[4] << 8) | g_recv_buf[5]; // 16位原始值（示例字节位，需按实际调整）
-    int16_t pitch_raw = (g_recv_buf[6] << 8) | g_recv_buf[7];
+    int16_t pitch_raw = (g_recv_buf[4] << 8) | g_recv_buf[5]; // 16位原始值（示例字节位，需按实际调整）
+    int16_t roll_raw = (g_recv_buf[6] << 8) | g_recv_buf[7];
     int16_t yaw_raw = (g_recv_buf[8] << 8) | g_recv_buf[9];
-    // 实际角度 = 原始数据 / 100（保留2位小数）
+    // 实际角度 = 原始数据 / 100（保�?2位小数）
     roll_angle = (float)roll_raw / 100.0f;
     pitch_angle = (float)pitch_raw / 100.0f;
     yaw_angle = (float)yaw_raw / 100.0f;
-    printf("%.2f,%.2f,%.2f\n",
-           roll_angle, pitch_angle, yaw_angle);
+    // printf("%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n",
+    //        Pit.RPMOutput, pitch_angle, Yaw.YawSetting, yaw_angle, Pit.KP, Yaw.KI);
+    printf("%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n",
+           Pit.PitchSetting, pitch_angle, Pit.RPMOutput, Pit.KP, Yaw.YawSetting, yaw_angle);
 
     osDelay(10);
   }
@@ -255,10 +261,27 @@ void StartTaskALL_Ctrl(void const *argument)
   /* USER CODE BEGIN StartTaskALL_Ctrl */
   Pitch_PID_Init();
   Yaw_PID_Init();
+  Distance_PID_Init();
+  places_1[0].x = 0.5f;
+  places_1[0].y = 0.0f;
+  places_1[1].x = 0.5f;
+  places_1[1].y = 0.3f;
+  places_1[2].x = 0.0f;
+  places_1[2].y = 0.3f;
+  places_1[3].x = 0.0f;
+  places_1[3].y = 0.0f;
+  places_1[4].x = 0.0f;
+  places_1[4].y = 0.3f;
+  places_1[5].x = 0.5f;
+  places_1[5].y = 0.3f;
+  places_1[6].x = 0.5f;
+  places_1[6].y = 0.0f;
+  places_1[7].x = 0.0f;
+  places_1[7].y = 0.0f;
   /* Infinite loop */
   for (;;)
   {
-    // Task0 按下按键，记录Yaw初始值
+    // Task0 按下按键，记录Yaw初始�?
     if (Task_Flag == 0)
     {
       if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET)
@@ -266,25 +289,23 @@ void StartTaskALL_Ctrl(void const *argument)
         osDelay(100);
         if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET)
         {
-          const uint8_t send_cmd[3] = {0xA5, 0x95, 0x3A};
-          HAL_UART_Transmit_IT(&huart6, send_cmd, sizeof(send_cmd));
-          HAL_UART_Receive(&huart6, g_recv_buf, sizeof(g_recv_buf), 200);
-          yaw_Init = (float)((g_recv_buf[8] << 8) | g_recv_buf[9]) / 100.0f;
+          Yaw.YawSetting = yaw_angle;
+          yaw_Init = yaw_angle;
           Task_Flag = 1;
+          Distance.DistanceSetting = 1.0f; // 设置目标距离，单位米
         }
       }
       LED_Flash(100);
     }
-    // Task1
     if (Task_Flag == 1)
     {
-    float yaw_error = yaw_angle - yaw_Init;  // 计算偏差
-    MotorPID[0].RPMSetting = Yaw.FunctionCalPID(&Yaw, yaw_error);
-    MotorPID[1].RPMSetting = -Yaw.FunctionCalPID(&Yaw, yaw_error);
-    LED_Flash(400);
+      MotorPID[0].RPMSetting = Yaw.FunctionCalPID(&Yaw, yaw_angle);
+      MotorPID[1].RPMSetting = -Yaw.FunctionCalPID(&Yaw, yaw_angle);
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+      osDelay(10);
       if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET)
       {
-        osDelay(100);
+        osDelay(400);
         if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET)
         {
           Task_Flag = 2;
@@ -293,21 +314,30 @@ void StartTaskALL_Ctrl(void const *argument)
     }
     if (Task_Flag == 2)
     {
-    float yaw_error = yaw_angle - yaw_Init;   // 加上偏差修正
-    float pitch_error = pitch_angle;          // 如果需要也可以加初始偏移
-    MotorPID[0].RPMSetting = Pit.FunctionCalPID(&Pit, pitch_error) + Yaw.FunctionCalPID(&Yaw, yaw_error);
-    MotorPID[1].RPMSetting = Pit.FunctionCalPID(&Pit, pitch_error) - Yaw.FunctionCalPID(&Yaw, yaw_error);
-    LED_Flash(1000);
+      // MotorPID[0].RPMSetting = Distance.FunctionCalPID(&Distance, Distance_Measure) + Yaw.FunctionCalPID(&Yaw, yaw_angle);
+      // MotorPID[1].RPMSetting = Distance.FunctionCalPID(&Distance, Distance_Measure) - Yaw.FunctionCalPID(&Yaw, yaw_angle);
+      // osDelay(100);
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+      Xunhang(places_1);
       if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET)
       {
-        osDelay(100);
+        osDelay(400);
         if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET)
         {
           Task_Flag = 3;
         }
       }
     }
-    osDelay(1);
+    if (Task_Flag == 3)
+    {
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+      // if (pitch_angle > 1.0f || pitch_angle < -1.0f)
+      {
+        MotorPID[0].RPMSetting = -Pit.FunctionCalPID(&Pit, pitch_angle);
+        MotorPID[1].RPMSetting = -Pit.FunctionCalPID(&Pit, pitch_angle);
+      }
+    }
+    osDelay(10);
   }
   /* USER CODE END StartTaskALL_Ctrl */
 }

@@ -46,6 +46,7 @@ uint32_t ATest;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+
 /* USER CODE BEGIN PV */
 extern EncoderTypeDef MotorEncoder[2];
 extern PIDTypeDef MotorPID[2];
@@ -54,7 +55,6 @@ extern PIDTypeDef MotorPID[2];
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 void MX_FREERTOS_Init(void);
-
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -197,9 +197,9 @@ if (htim->Instance == TIM4)
   }
 
   if (htim->Instance == TIM5)
-  { // TIM5设置的是0.01s中断�??�??
+  { // TIM5设置的是0.01s中断�???�???
     MotorEncoder[0].WatchDogTick++;
-    // 如果看门狗计数�?�，超时�??100，说明脉冲数长时间没有更�??
+    // 如果看门狗计数�?�，超时�???100，说明脉冲数长时间没有更�???
     // 也就是说，轮子已经有1s保持不转了，那么转�?�就强制设为0，以防止出错
     if (MotorEncoder[0].WatchDogTick > 100)
     {

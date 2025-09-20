@@ -175,12 +175,15 @@ int fputc(int ch, FILE *stream)
 
 /*Vofa数据解析赋值部分*/
 uint8_t id_Flag;         // 1为Kp 2为Ki 3为Kd
-uint8_t Data_BitNum = 4; // 数据的位数，即12.123 有6位 -12.123有7为
+uint8_t Data_BitNum = 7; // 数据的位数，即12.123 有6位 -12.123有7为
 // 串口中断，用于接受vofa的参数的   #P1=12.123！   #P为帧头，1为是改变谁的标志位， =是数据收集标志位
 float PID_Pitch[3] = {0.0, 0.0, 0.0}; // Kp,Ki,Kd
 uint8_t PID_index = 0;
 int16_t USART1_ReceiveData;
 extern Pitch_PIDTypeDef Pit;
+extern Yaw_PIDTypeDef Yaw;
+extern Distance_PIDTypeDef Distance;
+extern int Task_Flag;
 uint8_t Usart_RxData;
 uint8_t Usart_RxFlag;
 uint8_t Usart_RxPacket[100];      // 接受数据包
@@ -188,52 +191,67 @@ uint8_t Usart_RxPacket_Len = 100; // 接受数据包长度
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     static uint8_t RxState = 0;
-    static uint8_t pRxPacket = 0;
+    static uint8_t pRxPacket = 0; // 用于计数接收的数值字符
     /* 判断是哪个串口触发的中断 */
     if (huart == &huart1)
     {
+        // 重新开启中断（放在最前面，避免漏收数据）
+        HAL_UART_Receive_IT(&huart1, &Usart_RxData, 1);
 
+        if (RxState == 0 && Usart_RxData == 0x23) // 第一个帧头 "#"（0x23）
         {
-            HAL_UART_Receive_IT(&huart1, &Usart_RxData, 1); // 重新开启中断
-            if (RxState == 0 && Usart_RxData == 0x23)       // 第一个帧头  "#"==0x23
+            RxState = 1;
+            // 重置缓冲区，避免旧数据干扰
+            memset(Usart_RxPacket, 0, Usart_RxPacket_Len);
+            pRxPacket = 0;
+        }
+        else if (RxState == 1 && Usart_RxData == 0x50) // 第二个帧头 "P"（0x50）
+        {
+            RxState = 2;
+        }
+        else if (RxState == 2) // 接收ID（1/2/3，对应Kp/Ki/Kd）
+        {
+            id_Flag = Usart_RxData - 48; // 字符'1'转数字1（ASCII码49-48=1）
+            RxState = 3;
+        }
+        else if (RxState == 3 && Usart_RxData == 0x3D) // 分隔符 "="（0x3D）
+        {
+            RxState = 4;
+        }
+        else if (RxState == 4) // 接收数值数据（直到遇到"!"）
+        {
+            if (Usart_RxData == 0x21) // 结束符 "!"（0x21）
             {
-                RxState = 1;
+                Data_BitNum = pRxPacket; // 记录数值字符长度
+                RxState = 0;             // 重置状态机
+                Usart_RxFlag = 1;        // 标记数据包接收完成
+
+                // 解析数据并赋值
+                PID_index = Get_id_Flag();
+                PID_Pitch[PID_index - 1] = RxPacket_Data_Handle();
+                Pit.KP = PID_Pitch[0];
+                Pit.KI = PID_Pitch[1];
+                Pit.KD = PID_Pitch[2];
             }
-            else if (RxState == 1 && Usart_RxData == 0x50) // 第二个帧头  "P"==0x50
+            else
             {
-                RxState = 2;
-            }
-            else if (RxState == 2) // 确认传参的对象 即修改id_Flag
-            {
-                id_Flag = Usart_RxData - 48;
-                RxState = 3;
-            }
-            else if (RxState == 3 && Usart_RxData == 0x3D) // 判断等号，也可以类比为数据开始的帧头
-            {
-                RxState = 4;
-            }
-            else if (RxState == 4) // 开始接收传输的数据
-            {
-                if (Usart_RxData == 0x21) // 结束的帧尾   如果没有接收到！即还有数据来，就一直接收
+                // 关键修复：将数值字符存入缓冲区（如'1'、'2'、'.'、'-'）
+                if (pRxPacket < Usart_RxPacket_Len) // 避免缓冲区溢出
                 {
-                    Data_BitNum = pRxPacket; // 获取位数
-                    pRxPacket = 0;           // 清除索引方便下次进行接收数据
-                    RxState = 0;
-                    Usart_RxFlag = 1;
-                    PID_index = Get_id_Flag();
-                    PID_Pitch[PID_index - 1] = RxPacket_Data_Handle();
-                    Pit.KP = PID_Pitch[0];
-                    Pit.KI = PID_Pitch[1];
-                    Pit.KD = PID_Pitch[2];
-                }
-                else
-                {
-                    Usart_RxPacket[pRxPacket++] = Usart_RxData; // 把数据放在数据包内
+                    Usart_RxPacket[pRxPacket++] = Usart_RxData;
                 }
             }
         }
+        else
+        {
+            // 其他状态（如异常数据），重置状态机
+            RxState = 0;
+            pRxPacket = 0;
+        }
+
+        // 调试：发送Ready确认（可保留）
+        // HAL_UART_Transmit_IT(&huart1, "Ready!", 6);
     }
-    HAL_UART_Receive_IT(&huart1, &Usart_RxData, 1); // 重新开启中断
 }
 
 uint8_t Get_id_Flag(void) // 将获取id_Flag封装成函数
